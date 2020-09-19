@@ -21,7 +21,7 @@
 
 /*! \file flexran_agent_common.c
  * \brief common primitives for all agents
- * \author Xenofon Foukas, Mohamed Kassem and Navid Nikaein, shahab SHARIAT BAGHERI
+ * \author Xenofon Foukas, Mohamed Kassem and Navid Nikaein
  * \date 2017
  * \version 0.1
  */
@@ -38,6 +38,7 @@
 #include "flexran_agent_phy.h"
 #include "flexran_agent_mac.h"
 #include "flexran_agent_rrc.h"
+#include "flexran_agent_s1ap.h"
 //#include "PHY/extern.h"
 #include "common/utils/LOG/log.h"
 #include "flexran_agent_mac_internal.h"
@@ -128,6 +129,7 @@ int flexran_agent_hello(mid_t mod_id, const void *params, Protocol__FlexranMessa
   hello_msg->bs_id  = flexran_get_bs_id(mod_id);
   hello_msg->has_bs_id = 1;
   hello_msg->n_capabilities = flexran_get_capabilities(mod_id, &hello_msg->capabilities);
+  hello_msg->n_splits = flexran_get_splits(mod_id, &hello_msg->splits);
   *msg = malloc(sizeof(Protocol__FlexranMessage));
 
   if(*msg == NULL)
@@ -161,6 +163,7 @@ int flexran_agent_destroy_hello(Protocol__FlexranMessage *msg) {
 
   free(msg->hello_msg->header);
   free(msg->hello_msg->capabilities);
+  free(msg->hello_msg->splits);
   free(msg->hello_msg);
   free(msg);
   return 0;
@@ -303,6 +306,7 @@ int flexran_agent_destroy_enb_config_reply(Protocol__FlexranMessage *msg) {
     if (reply->cell_config[i]->mbsfn_subframe_config_sfalloc)
       free(reply->cell_config[i]->mbsfn_subframe_config_sfalloc);
 
+    /* si_config is shared between MAC and RRC, free here */
     if (reply->cell_config[i]->si_config) {
       for(int j = 0; j < reply->cell_config[i]->si_config->n_si_message; j++) {
         free(reply->cell_config[i]->si_config->si_message[j]);
@@ -313,30 +317,14 @@ int flexran_agent_destroy_enb_config_reply(Protocol__FlexranMessage *msg) {
     }
 
     if (reply->cell_config[i]->slice_config) {
-      for (int j = 0; j < reply->cell_config[i]->slice_config->n_dl; ++j) {
-        if (reply->cell_config[i]->slice_config->dl[j]->n_sorting > 0)
-          free(reply->cell_config[i]->slice_config->dl[j]->sorting);
-
-        free(reply->cell_config[i]->slice_config->dl[j]->scheduler_name);
-        free(reply->cell_config[i]->slice_config->dl[j]);
-      }
-
-      free(reply->cell_config[i]->slice_config->dl);
-
-      for (int j = 0; j < reply->cell_config[i]->slice_config->n_ul; ++j) {
-        if (reply->cell_config[i]->slice_config->ul[j]->n_sorting > 0)
-          free(reply->cell_config[i]->slice_config->ul[j]->sorting);
-
-        free(reply->cell_config[i]->slice_config->ul[j]->scheduler_name);
-        free(reply->cell_config[i]->slice_config->ul[j]);
-      }
-
-      free(reply->cell_config[i]->slice_config->ul);
-      free(reply->cell_config[i]->slice_config);
+      flexran_agent_destroy_mac_slice_config(reply->cell_config[i]);
     }
 
     free(reply->cell_config[i]);
   }
+  
+  if (reply->s1ap)
+    flexran_agent_free_s1ap_cell_config(&reply->s1ap);
 
   free(reply->cell_config);
   free(reply);
@@ -598,21 +586,7 @@ int flexran_agent_ue_config_reply(mid_t mod_id, const void *params, Protocol__Fl
     goto error;
 
   ue_config_reply_msg->header = header;
-  ue_config_reply_msg->n_ue_config = 0;
-
-  if (flexran_agent_get_rrc_xface(mod_id))
-    ue_config_reply_msg->n_ue_config = flexran_get_rrc_num_ues(mod_id);
-  else if (flexran_agent_get_mac_xface(mod_id))
-    ue_config_reply_msg->n_ue_config = flexran_get_mac_num_ues(mod_id);
-
-  if (flexran_agent_get_rrc_xface(mod_id) && flexran_agent_get_mac_xface(mod_id)
-      && flexran_get_rrc_num_ues(mod_id) != flexran_get_mac_num_ues(mod_id)) {
-    const int nrrc = flexran_get_rrc_num_ues(mod_id);
-    const int nmac = flexran_get_mac_num_ues(mod_id);
-    ue_config_reply_msg->n_ue_config = nrrc < nmac ? nrrc : nmac;
-    LOG_E(FLEXRAN_AGENT, "%s(): different numbers of UEs in RRC (%d) and MAC (%d), reporting for %lu UEs\n",
-          __func__, nrrc, nmac, ue_config_reply_msg->n_ue_config);
-  }
+  ue_config_reply_msg->n_ue_config = flexran_agent_get_num_ues(mod_id);
 
   Protocol__FlexUeConfig **ue_config;
 
@@ -769,9 +743,12 @@ int flexran_agent_enb_config_reply(mid_t mod_id, const void *params, Protocol__F
       cell_conf[i]->carrier_index = i;
       cell_conf[i]->has_carrier_index = 1;
     }
-
+    
     enb_config_reply_msg->cell_config=cell_conf;
   }
+  
+  if (flexran_agent_get_s1ap_xface(mod_id))
+    flexran_agent_fill_s1ap_cell_config(mod_id, &enb_config_reply_msg->s1ap);
 
   *msg = malloc(sizeof(Protocol__FlexranMessage));
 
@@ -898,26 +875,40 @@ int flexran_agent_handle_enb_config_reply(mid_t mod_id, const void *params, Prot
   Protocol__FlexranMessage *input = (Protocol__FlexranMessage *)params;
   Protocol__FlexEnbConfigReply *enb_config = input->enb_config_reply_msg;
 
-  if (enb_config->n_cell_config == 0) {
-    LOG_W(FLEXRAN_AGENT,
-          "received enb_config_reply message does not contain a cell_config\n");
-    *msg = NULL;
-    return 0;
-  }
-
   if (enb_config->n_cell_config > 1)
     LOG_W(FLEXRAN_AGENT, "ignoring slice configs for other cell except cell 0\n");
 
-  if (flexran_agent_get_mac_xface(mod_id) && enb_config->cell_config[0]->slice_config) {
-    prepare_update_slice_config(mod_id, enb_config->cell_config[0]->slice_config);
-    //} else {
-    //  initiate_soft_restart(mod_id, enb_config->cell_config[0]);
+  if (enb_config->n_cell_config > 0) {
+    if (flexran_agent_get_mac_xface(mod_id) && enb_config->cell_config[0]->slice_config) {
+      prepare_update_slice_config(mod_id, &enb_config->cell_config[0]->slice_config);
+    }
+    if (enb_config->cell_config[0]->has_eutra_band
+        && enb_config->cell_config[0]->has_dl_freq
+        && enb_config->cell_config[0]->has_ul_freq
+        && enb_config->cell_config[0]->has_dl_bandwidth) {
+      initiate_soft_restart(mod_id, enb_config->cell_config[0]);
+    }
+    if (flexran_agent_get_rrc_xface(mod_id)
+        && enb_config->cell_config[0]->has_x2_ho_net_control) {
+      LOG_I(FLEXRAN_AGENT,
+            "setting X2 HO NetControl to %d\n",
+            enb_config->cell_config[0]->x2_ho_net_control);
+      const int rc = flexran_set_x2_ho_net_control(mod_id, enb_config->cell_config[0]->x2_ho_net_control);
+      if (rc < 0)
+        LOG_E(FLEXRAN_AGENT, "Error in configuring X2 handover controlled by network");
+    }
+    if (flexran_agent_get_rrc_xface(mod_id) && enb_config->cell_config[0]->n_plmn_id > 0) {
+      flexran_agent_handle_plmn_update(mod_id,
+                                       0,
+                                       enb_config->cell_config[0]->n_plmn_id,
+                                       enb_config->cell_config[0]->plmn_id);
+    }
   }
 
-  if (flexran_agent_get_rrc_xface(mod_id) && enb_config->cell_config[0]->has_x2_ho_net_control) {
-    if (flexran_set_x2_ho_net_control(mod_id, enb_config->cell_config[0]->x2_ho_net_control) < 0) {
-      LOG_E(FLEXRAN_AGENT, "Error in configuring X2 handover controlled by network");
-    }
+  if (flexran_agent_get_s1ap_xface(mod_id) && enb_config->s1ap) {
+    flexran_agent_handle_mme_update(mod_id,
+                                    enb_config->s1ap->n_mme,
+                                    enb_config->s1ap->mme);
   }
 
   *msg = NULL;
@@ -930,8 +921,33 @@ int flexran_agent_handle_ue_config_reply(mid_t mod_id, const void *params, Proto
   Protocol__FlexUeConfigReply *ue_config_reply = input->ue_config_reply_msg;
 
   for (i = 0; flexran_agent_get_mac_xface(mod_id) && i < ue_config_reply->n_ue_config; i++)
-    prepare_ue_slice_assoc_update(mod_id, ue_config_reply->ue_config[i]);
+    prepare_ue_slice_assoc_update(mod_id, &ue_config_reply->ue_config[i]);
+  /* prepare_ue_slice_assoc_update takes ownership of the individual
+   * FlexUeConfig messages. Therefore, mark zero messages to not accidentally
+   * free them twice */
+  ue_config_reply->n_ue_config = 0;
 
   *msg = NULL;
   return 0;
+}
+
+int flexran_agent_get_num_ues(mid_t mod_id) {
+  const int has_rrc = flexran_agent_get_rrc_xface(mod_id) != NULL;
+  const int has_mac = flexran_agent_get_mac_xface(mod_id) != NULL;
+  DevAssert(has_rrc || has_mac);
+  if (has_rrc && !has_mac)
+    return flexran_get_rrc_num_ues(mod_id);
+  if (!has_rrc && has_mac)
+    return flexran_get_mac_num_ues(mod_id);
+
+  /* has both */
+  const int nrrc = flexran_get_rrc_num_ues(mod_id);
+  const int nmac = flexran_get_mac_num_ues(mod_id);
+  if (nrrc != nmac) {
+    const int n_ue = nrrc < nmac ? nrrc : nmac;
+    LOG_E(FLEXRAN_AGENT, "%s(): different numbers of UEs in RRC (%d) and MAC (%d), reporting for %d UEs\n",
+          __func__, nrrc, nmac, n_ue);
+    return n_ue;
+  }
+  return nrrc;
 }

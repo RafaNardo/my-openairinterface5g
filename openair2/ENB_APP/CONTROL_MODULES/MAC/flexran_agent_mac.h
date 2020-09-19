@@ -51,8 +51,15 @@ int flexran_agent_mac_destroy_sr_info(Protocol__FlexranMessage *msg);
 int flexran_agent_mac_sf_trigger(mid_t mod_id, const void *params, Protocol__FlexranMessage **msg);
 int flexran_agent_mac_destroy_sf_trigger(Protocol__FlexranMessage *msg);
 
-/* Statistics reply protocol message constructor and destructor */
-int flexran_agent_mac_stats_reply(mid_t mod_id, const report_config_t *report_config, Protocol__FlexUeStatsReport **ue_report, Protocol__FlexCellStatsReport **cell_report);
+/* Statistics reply protocol message constructors (for UE and cell stats) and destructor */
+int flexran_agent_mac_stats_reply_ue(mid_t mod_id,
+                                     Protocol__FlexUeStatsReport **ue_report,
+                                     int      n_ue,
+                                     uint32_t ue_flags);
+int flexran_agent_mac_stats_reply_cell(mid_t mod_id,
+                                       Protocol__FlexCellStatsReport **cell_report,
+                                       int      n_cc,
+                                       uint32_t cc_flags);
 int flexran_agent_mac_destroy_stats_reply(Protocol__FlexStatsReply *reply);
 
 /* DL MAC scheduling decision protocol message constructor (empty command) and destructor */ 
@@ -108,7 +115,16 @@ int flexran_agent_unregister_mac_xface(mid_t mod_id);
 /* Inform controller about possibility to update slice configuration */
 void flexran_agent_slice_update(mid_t mod_id);
 
-/* return a pointer to the current config */
-Protocol__FlexSliceConfig *flexran_agent_get_slice_config(mid_t mod_id);
+/* marks slice_config so that it can be applied later. Takes ownership of the
+ * FlexSliceConfig message */
+void prepare_update_slice_config(mid_t mod_id, Protocol__FlexSliceConfig **slice);
+
+/* inserts a new ue_config into the structure keeping ue to slice association
+ * updates and marks so it can be applied. Takes ownership of the FlexUeConfig message */
+void prepare_ue_slice_assoc_update(mid_t mod_id, Protocol__FlexUeConfig **ue_config);
+
+/* free slice_config part of flexCellConfig, filled in
+ * flexran_agent_fill_mac_cell_config() */
+void flexran_agent_destroy_mac_slice_config(Protocol__FlexCellConfig *conf);
 
 #endif
