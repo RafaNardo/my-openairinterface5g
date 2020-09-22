@@ -26,7 +26,7 @@ cmake_minimum_required (VERSION 3.0)
 #########################################################
 # Base directories, compatible with legacy OAI building #
 #########################################################
-set (OPENAIR_DIR     $ENV{OPENAIR_DIR})
+set (OPENAIR_DIR     "/my-openairinterface5g")
 if("${OPENAIR_DIR}" STREQUAL "")
   string(REGEX REPLACE "/cmake_targets.*$" "" OPENAIR_DIR ${CMAKE_CURRENT_BINARY_DIR})
 endif()

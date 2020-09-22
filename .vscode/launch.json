@@ -8,21 +8,38 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "enter program name, for example ${workspaceFolder}/a.exe",
-            "args": [],
+            "program": "${command:cmake.launchTargetPath}",
+            "args": [
+                "-O", 
+                "/my-openairinterface5g/ci-scripts/conf_files/cu.conf"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            // "environment": [
+            //     {
+            //         "name": "OAI_CONFIGMODULE",
+            //         "value": "/home/rafael/git/oaisim-free5gc-source/oaisim-folder/ci-scripts/conf_files/ue.nfapi.conf"
+            //     }
+            // ],
             "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "/path/to/gdb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
-                }
+                },
             ]
         }
     ]
 }
+// "-O",
+// "/openairinterface5g/ci-scripts/conf_files/rru.conf",
+// "--L2-emul",
+// "3",
+// "--num-ues",
+// "1",
+// "--nums_ue_thread",
+// "1",
+// "--nokrnmod",
+// "1"

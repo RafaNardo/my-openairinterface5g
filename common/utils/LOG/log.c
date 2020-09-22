@@ -42,7 +42,26 @@
 #include <pthread.h>
 #include <string.h>
 #include <linux/prctl.h>
+#include <stdlib.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #include "common/config/config_userapi.h"
+
+#define LOGMESSAGEBUFLEN 262144	//Max length of buffer
+// #define GRAYLOGSERVER "172.18.0.4"
+// #define GRAYLOGPORT 12210	//The port on which to send data
+
+struct log_message
+{
+    int line;
+    char level[20];
+    char file[1000];
+    char func[500];
+    char host[500];
+    char full_message[220000];
+    char component[50];
+    char short_message[250];
+};
 
 // main log variables
 
@@ -492,6 +511,48 @@ static int log_header(char *log_buffer,
                    log_level_highlight_end[level]);
 }
 
+void str_to_uint16(const char *str, uint16_t *res)
+{
+  char *end;
+  intmax_t val = strtoimax(str, &end, 10);
+  *res = (uint16_t) val;
+}
+
+void send_message(char *json){
+
+	struct sockaddr_in si_other;
+	int s, slen=sizeof(si_other);
+	char buf[LOGMESSAGEBUFLEN];
+
+	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	{
+		printf("socket\n");
+	}
+
+  uint16_t graylogPort;  
+  str_to_uint16(getenv("GRAYLOG_SERVER_UDP_PORT"), &graylogPort);
+
+	memset((char *) &si_other, 0, sizeof(si_other));
+	si_other.sin_family = AF_INET;
+	si_other.sin_port = htons(graylogPort);
+	
+  char *graylogAddress = getenv("GRAYLOG_SERVER_ADDRESS");
+	if (inet_aton(graylogAddress , &si_other.sin_addr) == 0) 
+	{
+		fprintf(stderr, "inet_aton() failed\n");
+		exit(1);
+	}
+
+	//send the message
+	if (sendto(s, json, strlen(json) , 0 , (struct sockaddr *) &si_other, slen)==-1)
+	{
+		printf("erro on send log to graylog \n");
+		exit(1);
+	}
+  close(s);
+	puts(buf);
+}
+
 void logRecord_mt(const char *file,
 		          const char *func,
 				  int line,
@@ -503,14 +564,57 @@ void logRecord_mt(const char *file,
   char log_buffer[MAX_LOG_TOTAL]= {0};
   va_list args;
   va_start(args,format);
+
   if (log_mem_flag == 1) {
     log_output_memory(file,func,line,comp,level,format,args);
   } else {
-  log_header(log_buffer,MAX_LOG_TOTAL,comp,level,format);
-  g_log->log_component[comp].vprint(g_log->log_component[comp].stream,log_buffer,args);
-  fflush(g_log->log_component[comp].stream);
+    log_header(log_buffer,MAX_LOG_TOTAL,comp,level,format);
+    g_log->log_component[comp].vprint(g_log->log_component[comp].stream,log_buffer,args);
+    fflush(g_log->log_component[comp].stream);
   }
   va_end(args);
+
+	struct log_message log_message;
+	char json_message[LOGMESSAGEBUFLEN];
+
+  log_message.line = line;
+  strcpy(log_message.host, "teste");
+  strcpy(log_message.func, func);
+  strcpy(log_message.file, file);
+  strcpy(log_message.component, g_log->log_component[comp].name);
+
+  va_start(args,format);
+  vsprintf(log_message.full_message, format, args);
+  va_end(args);
+
+  snprintf(
+    log_message.level, 
+    sizeof log_message.level, 
+    "%s",
+    log_level_names[level].name
+  );
+
+  snprintf(
+    log_message.short_message,
+    sizeof log_message.short_message,
+    "%s -> %s",
+    log_message.component,
+    log_message.level);
+      
+	snprintf(
+      json_message, 
+      LOGMESSAGEBUFLEN, 
+      "{ \"version\": \"1.0\", \"host\": \"%s\", \"level\": \"%s\", \"short_message\": \"%s\", \"full_message\": \"%s\", \"line\": %d, \"file\": \"%s\", \"func\": \"%s\", \"component\":\"%s\" }",  
+      log_message.host,
+      log_message.level,
+      log_message.short_message, 
+      log_message.full_message,
+      log_message.line,
+      log_message.file,
+      log_message.func,
+      log_message.component);
+  
+  send_message(json_message);
 }
 
 void vlogRecord_mt(const char *file,

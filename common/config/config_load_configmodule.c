@@ -52,6 +52,10 @@ int load_config_sharedlib(configmodule_interface_t *cfgptr) {
   int st;
   st=0;
   sprintf(libname,CONFIG_SHAREDLIBFORMAT,cfgptr->cfgmode);
+
+
+  printf("[CONFIG --TESTE]");
+
   lib_handle = dlopen(libname,RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
 
   if (!lib_handle) {

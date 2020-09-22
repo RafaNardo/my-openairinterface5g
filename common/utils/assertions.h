@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <platform_types.h>
+#include "common/utils/LOG/log.h"
+#include "common/utils/LOG/vcd_signal_dumper.h"
 
 #if defined(ENB_MODE)
 # define display_backtrace()
@@ -41,14 +43,16 @@ void output_log_mem(void);
     fflush(stderr);                             \
     exit(EXIT_FAILURE);                         \
 
-#define _Assert_(cOND, aCTION, fORMAT, aRGS...)             \
-do {                                                        \
-    if (!(cOND)) {                                          \
-        fprintf(stderr, "\nAssertion ("#cOND") failed!\n"   \
-                "In %s() %s:%d\n" fORMAT,                   \
-                __FUNCTION__, __FILE__, __LINE__, ##aRGS);  \
-        aCTION;                                             \
-    }						\
+#define _Assert_(cOND, aCTION, fORMAT, aRGS...)                 \
+do {                                                            \
+    if (!(cOND)) {                                              \
+        fprintf(stderr, "\nAssertion ("#cOND") failed!\n"       \
+                    "In %s() %s:%d\n" fORMAT,                   \
+                    __FUNCTION__, __FILE__, __LINE__, ##aRGS);  \
+        LOG_E(UDP_, " " fORMAT, ##aRGS);                        \
+        printf("debulhou\n");                                   \
+        aCTION;                                                 \
+    }						                                    \
 } while(0)
 
 #define AssertFatal(cOND, fORMAT, aRGS...)          _Assert_(cOND, _Assert_Exit_, fORMAT, ##aRGS)
