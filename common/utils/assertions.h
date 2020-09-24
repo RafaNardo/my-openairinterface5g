@@ -26,8 +26,6 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <platform_types.h>
-#include "common/utils/LOG/log.h"
-#include "common/utils/LOG/vcd_signal_dumper.h"
 
 #if defined(ENB_MODE)
 # define display_backtrace()
@@ -49,7 +47,6 @@ do {                                                            \
         fprintf(stderr, "\nAssertion ("#cOND") failed!\n"       \
                     "In %s() %s:%d\n" fORMAT,                   \
                     __FUNCTION__, __FILE__, __LINE__, ##aRGS);  \
-        LOG_E(UDP_, " " fORMAT, ##aRGS);                        \
         printf("debulhou\n");                                   \
         aCTION;                                                 \
     }						                                    \
