@@ -46,8 +46,13 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include "common/config/config_userapi.h"
+#include <unistd.h>
+#include <errno.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <netinet/in.h>
 
-#define LOGMESSAGEBUFLEN 262144	//Max length of buffer
+#define LOGMESSAGEBUFLEN 5000	//Max length of buffer
 // #define GRAYLOGSERVER "172.18.0.4"
 // #define GRAYLOGPORT 12210	//The port on which to send data
 
@@ -58,7 +63,7 @@ struct log_message
     char file[1000];
     char func[500];
     char host[500];
-    char full_message[220000];
+    char full_message[2000];
     char component[50];
     char short_message[250];
 };
@@ -576,9 +581,16 @@ void logRecord_mt(const char *file,
 
 	struct log_message log_message;
 	char json_message[LOGMESSAGEBUFLEN];
+ 
+   char host[256];
+   char *IP;
+   struct hostent *host_entry;
+   int hostname = gethostname(host, sizeof(host));
+   host_entry = gethostbyname(host);
+   IP = inet_ntoa(*((struct in_addr*) host_entry->h_addr_list[0]));
 
   log_message.line = line;
-  strcpy(log_message.host, "teste");
+  strcpy(log_message.host, host);
   strcpy(log_message.func, func);
   strcpy(log_message.file, file);
   strcpy(log_message.component, g_log->log_component[comp].name);
@@ -597,14 +609,15 @@ void logRecord_mt(const char *file,
   snprintf(
     log_message.short_message,
     sizeof log_message.short_message,
-    "%s -> %s",
+    "%s -> %s -> %s",
     log_message.component,
-    log_message.level);
-      
+    log_message.level,
+    log_message.full_message);
+
 	snprintf(
       json_message, 
       LOGMESSAGEBUFLEN, 
-      "{ \"version\": \"1.0\", \"host\": \"%s\", \"level\": \"%s\", \"short_message\": \"%s\", \"full_message\": \"%s\", \"line\": %d, \"file\": \"%s\", \"func\": \"%s\", \"component\":\"%s\" }",  
+      "{ \"version\": \"1.0\", \"host\": \"%s\", \"level\": \"%s\", \"short_message\": \"%s\", \"full_message\": \"%s\", \"line\": %d, \"file\": \"%s\", \"func\": \"%s\", \"component\":\"%s\", \"host_name\":\"%s\", \"ip\":\"%s\" }",  
       log_message.host,
       log_message.level,
       log_message.short_message, 
@@ -612,8 +625,12 @@ void logRecord_mt(const char *file,
       log_message.line,
       log_message.file,
       log_message.func,
-      log_message.component);
+      log_message.component,
+      host,
+      IP);
   
+  printf("Json: %s\n",json_message);
+
   send_message(json_message);
 }
 
