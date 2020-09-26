@@ -28,7 +28,7 @@
 #include <syslog.h>
 
 #include <debug.h>
-#include "../../../common/utils/LOG/log.h"
+#include <common/utils/LOG/log.h>
 
 #define MAX_MSG_LENGTH 			2096
 #define TRACE_HEADER_LENGTH		44
@@ -77,13 +77,13 @@ void nfapi_trace_dbg(nfapi_trace_level_t level, const char *format, ...)
 				LOG_W(NFAPI_VNF, trace_buff);
 				break;
 			case NFAPI_TRACE_NOTE:
-				LOG_N(NFAPI_VNF, trace_buff);
+				LOG_I(NFAPI_VNF, trace_buff);
 				break;
 			case NFAPI_TRACE_INFO:
 				LOG_I(NFAPI_VNF, trace_buff);
 				break;
 			case NFAPI_TRACE_LEVEL_MAX:
-				LOG_M(NFAPI_VNF, trace_buff);
+				LOG_I(NFAPI_VNF, trace_buff);
 				break;
 			default:
 				break;
